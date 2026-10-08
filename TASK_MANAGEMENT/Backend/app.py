@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 
@@ -10,14 +9,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "Frontend"
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
-CORS(app)  # lets the frontend (another port / file://) call this API
+CORS(app)
 
 DB = {
     "host": os.getenv("DB_HOST", "localhost"),
+    "port": int(os.getenv("DB_PORT", "3306")),
     "user": os.getenv("DB_USER", "root"),
     "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME", "taskmanager"),
 }
+
 CATEGORIES = {"task", "exam"}
 PRIORITIES = {"high", "medium", "low"}
 EDITABLE = {"title", "category", "priority", "due_date", "remind_at", "is_done"}
@@ -33,30 +34,41 @@ def run(sql, params=(), fetch=False):
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute(sql, params)
+
         if fetch:
             return cur.fetchall()
+
         conn.commit()
         return cur.lastrowid
+
     finally:
         conn.close()
 
 
 def clean(row):
-    out = {k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in row.items()}
+    out = {
+        k: (v.isoformat() if hasattr(v, "isoformat") else v)
+        for k, v in row.items()
+    }
     out["is_done"] = bool(out["is_done"])
     return out
 
 
 def norm_dt(value):
-    """'2026-10-06T18:30' -> '2026-10-06 18:30:00' (or None)."""
+    """Convert '2026-10-06T18:30' to '2026-10-06 18:30:00'."""
     if not value:
         return None
+
     value = value.replace("T", " ")
     return value + ":00" if len(value) == 16 else value
 
 
 def get_task(task_id):
-    rows = run("SELECT * FROM tasks WHERE id = %s", (task_id,), fetch=True)
+    rows = run(
+        "SELECT * FROM tasks WHERE id = %s",
+        (task_id,),
+        fetch=True
+    )
     return clean(rows[0]) if rows else None
 
 
@@ -75,51 +87,95 @@ def serve_frontend(filename):
 
 @app.get("/api/tasks")
 def list_tasks():
-    rows = run("SELECT * FROM tasks ORDER BY is_done, due_date IS NULL, due_date, created_at DESC", fetch=True)
+    rows = run(
+        """
+        SELECT * FROM tasks
+        ORDER BY is_done, due_date IS NULL, due_date, created_at DESC
+        """,
+        fetch=True
+    )
     return jsonify([clean(r) for r in rows])
 
 
 @app.post("/api/tasks")
 def create_task():
     data = request.get_json(silent=True) or {}
+
     title = (data.get("title") or "").strip()
     category = data.get("category", "task")
     priority = data.get("priority", "medium")
+
     if not title:
         return jsonify(error="Title is required"), 400
+
     if category not in CATEGORIES or priority not in PRIORITIES:
         return jsonify(error="Invalid category or priority"), 400
+
     new_id = run(
-        "INSERT INTO tasks (title, category, priority, due_date, remind_at) VALUES (%s, %s, %s, %s, %s)",
-        (title, category, priority, data.get("due_date") or None, norm_dt(data.get("remind_at"))),
+        """
+        INSERT INTO tasks
+        (title, category, priority, due_date, remind_at)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (
+            title,
+            category,
+            priority,
+            data.get("due_date") or None,
+            norm_dt(data.get("remind_at")),
+        ),
     )
+
     return jsonify(get_task(new_id)), 201
 
 
 @app.patch("/api/tasks/<int:task_id>")
 def update_task(task_id):
     data = request.get_json(silent=True) or {}
-    sets, vals = [], []
+
+    sets = []
+    vals = []
+
     for key in EDITABLE & data.keys():
         value = data[key]
+
         if key == "remind_at":
             value = norm_dt(value)
+
         elif key == "due_date":
             value = value or None
+
         elif key == "is_done":
             value = 1 if value else 0
-        sets.append(f"{key} = %s")  # key comes from the EDITABLE whitelist
+
+        sets.append(f"{key} = %s")
         vals.append(value)
+
     if not sets:
         return jsonify(error="Nothing to update"), 400
-    run(f"UPDATE tasks SET {', '.join(sets)} WHERE id = %s", (*vals, task_id))
+
+    run(
+        f"UPDATE tasks SET {', '.join(sets)} WHERE id = %s",
+        (*vals, task_id)
+    )
+
     task = get_task(task_id)
-    return (jsonify(task), 200) if task else (jsonify(error="Task not found"), 404)
+
+    return (
+        jsonify(task),
+        200
+    ) if task else (
+        jsonify(error="Task not found"),
+        404
+    )
 
 
 @app.delete("/api/tasks/<int:task_id>")
 def delete_task(task_id):
-    run("DELETE FROM tasks WHERE id = %s", (task_id,))
+    run(
+        "DELETE FROM tasks WHERE id = %s",
+        (task_id,)
+    )
     return "", 204
 
 
