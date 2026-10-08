@@ -7,7 +7,7 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-FRONTEND_DIR = BASE_DIR / "frontend"
+FRONTEND_DIR = BASE_DIR / "Frontend"
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 CORS(app)  # lets the frontend (another port / file://) call this API
