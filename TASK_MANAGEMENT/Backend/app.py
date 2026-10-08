@@ -1,3 +1,4 @@
+
 import os
 from pathlib import Path
 
@@ -14,7 +15,7 @@ CORS(app)  # lets the frontend (another port / file://) call this API
 DB = {
     "host": os.getenv("DB_HOST", "localhost"),
     "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASSWORD", "KArini@30"),
+    "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME", "taskmanager"),
 }
 CATEGORIES = {"task", "exam"}
